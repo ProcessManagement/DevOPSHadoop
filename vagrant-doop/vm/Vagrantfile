@@ -1,0 +1,69 @@
+# --------------------------------------------------------
+# Modified from https://bitbucket.org/logicblox/lb-vagrant
+# --------------------------------------------------------
+
+# Sanity checks: is a logicblox tarball present?
+tarballs = Dir.glob("logicblox-3*.tar.gz")
+if tarballs.length == 0 then
+    puts "No LogicBlox version 3 tarball found in current directory, please make sure you copy or hardlink a logicblox-*.tar.gz release tarball into the current directory."
+    puts "You can download release tarballs from https://download.logicblox.com"
+    Kernel.exit(1)
+elsif File.symlink?(tarballs[0]) then
+    puts "You cannot symlink a logicblox tarball, it has to be a copy or hardlink, you can create a hardlink using 'ln' without using the '-s' switch."
+    Kernel.exit(2)
+end
+
+# Vagrant configuration itself
+Vagrant.configure("2") do |config|
+  # This VM is based on Ubuntu 12.04 64-bit
+  config.vm.box = "precise64"
+  config.vm.box_url = "http://files.vagrantup.com/precise64.box"
+
+  # Give the VM 8GB of memory
+  config.vm.provider :virtualbox do |vb|
+    vb.customize ["modifyvm", :id, "--memory", "8192"]
+  end
+
+  # Install the Java JRE 7 and nginx (add more packages as desired)
+  # Unpack the logicblox tarball in /opt and symlink /opt/logicblox to the extracted
+  # directory
+  config.vm.provision :shell, inline: <<eos
+    set -e
+
+    echo "Installing some required packages in the VM"
+    apt-get update -qq
+    apt-get install -qq -y openjdk-7-jdk vim-tiny nginx make mercurial
+
+    # move files into the home directory
+    mv /vagrant/examples /home/vagrant/examples
+    mv /vagrant/environment.sh /home/vagrant/environment.sh
+
+    cd /home/vagrant
+
+    echo "Extracting the LogicBlox tarball"
+    tar xzf /vagrant/logicblox-*.tar.gz --directory /home/vagrant/
+
+    echo "Downloading DOOP..."
+    hg clone https://bitbucket.org/yanniss/doop
+    chown -R vagrant:vagrant /home/vagrant/doop
+    
+    hg clone https://bitbucket.org/yanniss/doop-benchmarks
+    chown -R vagrant:vagrant /home/vagrant/doop-benchmarks
+    
+    hg clone https://bitbucket.org/yanniss/doop-tools
+    chown -R vagrant:vagrant /home/vagrant/doop-tools
+    
+    # TODO: need to make environment variables permanent...see https://stackoverflow.com/questions/24707986/create-linux-environment-variable-using-vagrant-provisioner
+    # source /home/vagrant/environment.sh
+    echo "Finished. Please run 'cd /home/vagrant;source environment.sh' to configure DOOP environment."
+eos
+
+  # Map port 8080 in the VM to the host's port 8080
+  config.vm.network "forwarded_port", guest: 8080, host: 8080, auto_correct: true
+  # And 8086 to 8086
+  config.vm.network "forwarded_port", guest: 8086, host: 8086, auto_correct: true
+
+  # Alternatively you can use a static private IP, for this comment out the line above
+  # and uncomment the following line
+  #config.vm.network "private_network", ip: "192.168.13.22"
+end
